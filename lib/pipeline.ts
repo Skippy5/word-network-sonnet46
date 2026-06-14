@@ -140,25 +140,45 @@ export const DEFAULT_PHRASES = [
   "messaging support",
 ];
 
+// Words to never lemmatize — they'd produce nonsense stubs
+const LEMMA_EXCEPTIONS = new Set([
+  "access", "process", "address", "success", "progress", "excess",
+  "restore", "explore", "configure", "secure", "resolve", "receive",
+  "remove", "replace", "release", "rename", "reboot", "reconnect",
+  "reinstall", "reimage", "restart", "reseated", "reseat",
+  "offline", "online", "wireless", "stable", "cable",
+  "authenticate", "certificate", "template", "profile",
+]);
+
 // ---- Lemmatizer (simple suffix rules for common IT/English patterns) ----
-const LEMMA_RULES: [RegExp, string][] = [
-  [/(\w{4,})ings?\b/gi, "$1"],
-  [/(\w{4,})ations?\b/gi, "$1ate"],
-  [/(\w{4,})ers?\b/gi, "$1"],
-  [/(\w{4,})ies\b/gi, "$1y"],
-  [/(\w{4,})ying\b/gi, "$1y"],
-  [/(\w{4,})ied\b/gi, "$1y"],
-  [/(\w{4,})ed\b/gi, "$1"],
-  [/(\w{4,})s\b/gi, "$1"],
+// Rules are ordered most-specific first; first match wins.
+// Each rule: [pattern, replacement, minResultLength]
+const LEMMA_RULES: [RegExp, string, number][] = [
+  [/(\w{5,})ations?\b/gi, "$1ate", 5],   // configuration → configure
+  [/(\w{5,})ings?\b/gi, "$1", 4],        // printing → print
+  [/(\w{5,})ying\b/gi, "$1y", 4],        // copying → copy
+  [/(\w{5,})ied\b/gi, "$1y", 4],         // copied → copy
+  [/(\w{5,})ies\b/gi, "$1y", 4],         // copies → copy
+  [/(\w{5,})ers?\b/gi, "$1", 5],         // printers → print  (min 5 avoids "use"→"us")
+  [/(\w{5,})ed\b/gi, "$1e", 4],          // restored → restore, cleared → cleare→strip below
+  [/(\w{5,})s\b/gi, "$1", 4],            // errors → error
 ];
 
 export function lemmatize(word: string): string {
   const lower = word.toLowerCase();
-  // Don't lemmatize known acronyms/short terms
   if (lower.length <= 3) return lower;
-  for (const [pattern, replacement] of LEMMA_RULES) {
+  if (LEMMA_EXCEPTIONS.has(lower)) return lower;
+
+  for (const [pattern, replacement, minLen] of LEMMA_RULES) {
     const result = lower.replace(pattern, replacement);
-    if (result !== lower && result.length > 2) return result;
+    if (result !== lower && result.length >= minLen) {
+      // Strip trailing 'e' only when it wouldn't make the stem too short
+      // e.g. "cleared" → "cleare" → "clear" but "restore" stays "restore"
+      const clean = result.endsWith("e") && result.length > minLen
+        ? result.replace(/e$/, "") : result;
+      // Final sanity: don't return a result shorter than minLen
+      return clean.length >= minLen ? clean : result;
+    }
   }
   return lower;
 }

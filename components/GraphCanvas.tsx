@@ -42,24 +42,23 @@ export default function GraphCanvas({ nodes, links, darkMode }: Props) {
   const fgRef = useRef<ForceGraphMethods<GraphNode, GraphLink>>(null);
   const { physicsEnabled, setDrillTarget, drillTarget } = useAppStore();
 
-  // Scale node size by frequency (log scale so high-freq nodes don't dominate)
+  // Scale node radius — keep circles small so labels have room to breathe
   const nodeRadius = useCallback((node: GraphNode) => {
-    return Math.max(6, Math.min(24, 5 + Math.log2(node.frequency + 1) * 3));
+    return Math.max(4, Math.min(12, 3 + Math.log2(node.frequency + 1) * 1.8));
   }, []);
 
-  // Edge width scaled by weight
+  // Edge width scaled by weight — thin lines keep the graph clean
   const linkWidth = useCallback((link: GraphLink) => {
-    return Math.max(1, Math.min(8, Math.sqrt(link.weight) * 0.8));
+    return Math.max(0.5, Math.min(3, Math.sqrt(link.weight) * 0.4));
   }, []);
 
-  // Physics tuning — calm but responsive
+  // Physics tuning — spread nodes out so labels don't collide
   useEffect(() => {
     const fg = fgRef.current;
     if (!fg) return;
-    // Gentle charge, medium link distance
-    fg.d3Force("charge")?.strength(-120);
-    fg.d3Force("link")?.distance(80).strength(0.4);
-    fg.d3Force("center")?.strength(0.05);
+    fg.d3Force("charge")?.strength(-220);      // stronger repulsion = more spread
+    fg.d3Force("link")?.distance(55).strength(0.35);
+    fg.d3Force("center")?.strength(0.04);
   }, [nodes, links]);
 
   // Toggle physics
@@ -111,9 +110,8 @@ export default function GraphCanvas({ nodes, links, darkMode }: Props) {
   );
 
   const bg = darkMode ? "#111827" : "#f9fafb";
-  const textColor = darkMode ? "#f9fafb" : "#111827";
 
-  // Paint nodes
+  // Paint nodes + labels
   const nodeCanvasObject = useCallback(
     (node: GraphNode, ctx: CanvasRenderingContext2D, globalScale: number) => {
       const r = nodeRadius(node);
@@ -121,41 +119,57 @@ export default function GraphCanvas({ nodes, links, darkMode }: Props) {
       const y = node.y ?? 0;
       const color = communityColor(node.community);
 
-      // Dimming for non-highlighted when drill-in active
       const isDimmed =
         highlightedIds !== null && !highlightedIds.has(node.id as string);
 
-      ctx.globalAlpha = isDimmed ? 0.2 : 1;
+      ctx.globalAlpha = isDimmed ? 0.15 : 1;
 
-      // Shadow / glow
-      ctx.shadowColor = color;
-      ctx.shadowBlur = 8;
+      // Subtle glow only when not dimmed
+      if (!isDimmed) {
+        ctx.shadowColor = color;
+        ctx.shadowBlur = 4;
+      }
 
       // Node circle
       ctx.beginPath();
       ctx.arc(x, y, r, 0, 2 * Math.PI);
       ctx.fillStyle = color;
       ctx.fill();
-      ctx.strokeStyle = darkMode ? "#1f2937" : "#ffffff";
-      ctx.lineWidth = 1.5;
+      ctx.shadowBlur = 0;
+      ctx.strokeStyle = darkMode ? "#111827" : "#ffffff";
+      ctx.lineWidth = 1;
       ctx.stroke();
 
-      ctx.shadowBlur = 0;
+      // Label — fixed 11px in graph-space, scaled so it stays ~11px on screen
+      // Only render when zoomed in enough that text is readable
+      const LABEL_PX = 11;           // target screen pixels
+      const fontSz = LABEL_PX / globalScale;
 
-      // Label — only show if large enough on screen
-      const fontSize = Math.max(8, Math.min(14, r * 0.85)) / globalScale;
-      if (fontSize * globalScale > 5) {
+      if (globalScale >= 0.35) {     // hide labels when zoomed way out
         const label = node.id.replace(/_/g, " ");
-        ctx.font = `${fontSize}px Inter,sans-serif`;
-        ctx.fillStyle = textColor;
+        ctx.font = `500 ${fontSz}px Inter,system-ui,sans-serif`;
         ctx.textAlign = "center";
-        ctx.textBaseline = "middle";
-        ctx.fillText(label, x, y + r + fontSize * 0.9);
+        ctx.textBaseline = "top";
+
+        const labelY = y + r + 2 / globalScale;
+
+        // Pill background so text reads over any node colour
+        const tw = ctx.measureText(label).width;
+        const pad = 2 / globalScale;
+        const bgH = fontSz + pad * 2;
+        const bgW = tw + pad * 4;
+        ctx.fillStyle = darkMode ? "rgba(17,24,39,0.75)" : "rgba(249,250,251,0.8)";
+        ctx.beginPath();
+        ctx.roundRect(x - bgW / 2, labelY - pad, bgW, bgH, 3 / globalScale);
+        ctx.fill();
+
+        ctx.fillStyle = darkMode ? "#f3f4f6" : "#111827";
+        ctx.fillText(label, x, labelY);
       }
 
       ctx.globalAlpha = 1;
     },
-    [nodeRadius, highlightedIds, darkMode, textColor]
+    [nodeRadius, highlightedIds, darkMode]
   );
 
   const linkColor = useCallback(
