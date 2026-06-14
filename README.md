@@ -1,36 +1,125 @@
-This is a [Next.js](https://nextjs.org) project bootstrapped with [`create-next-app`](https://nextjs.org/docs/app/api-reference/cli/create-next-app).
+# IT Ticket Word Network — Sonnet46
 
-## Getting Started
+An interactive **word co-occurrence network** for IT service-desk tickets.
+Upload a CSV from ServiceNow (or any ITSM tool) to visualise problem clusters and discover how issues relate to one another.
 
-First, run the development server:
+> Developed with **Claude Sonnet 4.6** via Claude Code.
+
+---
+
+## Features
+
+- **Force-directed graph** — colour-coded clusters (Louvain), physics with drag/zoom/pan
+- **Drill-in** — click any node or edge to see every incident behind it
+- **Filters** — multi-select by business unit, location, country, state, category, priority, status; cascading geography
+- **Text pipeline** — HTML stripping, stop-word removal, lemmatization, synonym collapse, phrase detection
+- **Editable settings** — stop words, synonym map, phrases persisted to `localStorage`
+- **Light / dark mode** toggle
+- **Export** — filtered incidents, node list, edge list (all as CSV)
+- **All processing is client-side** — ticket data never leaves your browser
+
+---
+
+## Stack
+
+| Layer | Library |
+|---|---|
+| Framework | Next.js 16 (App Router, TypeScript) |
+| Styling | Tailwind CSS |
+| Graph | react-force-graph-2d (canvas) |
+| Graph model | graphology + graphology-communities-louvain |
+| State | Zustand |
+| CSV parsing | PapaParse |
+| Tests | Vitest |
+
+---
+
+## Quickstart
 
 ```bash
-npm run dev
-# or
-yarn dev
-# or
-pnpm dev
-# or
-bun dev
+npm install
+npm run dev        # http://localhost:3000
 ```
 
-Open [http://localhost:3000](http://localhost:3000) with your browser to see the result.
+---
 
-You can start editing the page by modifying `app/page.tsx`. The page auto-updates as you edit the file.
+## Deploy targets
 
-This project uses [`next/font`](https://nextjs.org/docs/app/building-your-application/optimizing/fonts) to automatically optimize and load [Geist](https://vercel.com/font), a new font family for Vercel.
+### 1. Vercel (recommended for zero-config hosting)
 
-## Learn More
+1. Push this repo to GitHub.
+2. Go to [vercel.com](https://vercel.com) and click **Add New Project**.
+3. Import the GitHub repo — accept all defaults, no configuration needed.
+4. Every `git push` to `main` redeploys automatically.
 
-To learn more about Next.js, take a look at the following resources:
+### 2. Node server (any Linux/AWS EC2 box)
 
-- [Next.js Documentation](https://nextjs.org/docs) - learn about Next.js features and API.
-- [Learn Next.js](https://nextjs.org/learn) - an interactive Next.js tutorial.
+```bash
+npm install
+npm run build
+npm start          # serves on port 3000
+```
 
-You can check out [the Next.js GitHub repository](https://github.com/vercel/next.js) - your feedback and contributions are welcome!
+### 3. Docker on AWS (EC2 / Lightsail / ECS)
 
-## Deploy on Vercel
+Enable standalone output by setting `output: 'standalone'` in `next.config.mjs`, then:
 
-The easiest way to deploy your Next.js app is to use the [Vercel Platform](https://vercel.com/new?utm_medium=default-template&filter=next.js&utm_source=create-next-app&utm_campaign=create-next-app-readme) from the creators of Next.js.
+```bash
+docker build -t word-network-sonnet46 .
+docker run -p 3000:3000 word-network-sonnet46
+```
 
-Check out our [Next.js deployment documentation](https://nextjs.org/docs/app/building-your-application/deploying) for more details.
+Open `http://<your-server-ip>:3000`.
+
+### 4. Static export (S3 + CloudFront / nginx)
+
+Uncomment `output: 'export'` in `next.config.mjs`, then:
+
+```bash
+npm run build      # produces out/
+npx serve out      # local preview
+```
+
+Upload the `out/` folder to S3 or serve via nginx:
+
+```nginx
+server {
+  root /var/www/word-network/out;
+  index index.html;
+  location / { try_files $uri $uri.html $uri/ =404; }
+}
+```
+
+---
+
+## CSV format
+
+| Column | Role |
+|---|---|
+| `ticket_id` | Required — drill-in key |
+| `short_description` | Text source (highest signal) |
+| `work_notes` | Text source |
+| `close_notes` | Text source |
+| `business_unit`, `location`, `country`, `state` | Filters |
+| `category`, `subcategory`, `assignment_group`, `priority`, `status` | Optional filters |
+| `opened_at` | Date metadata |
+
+Extra columns are passed through and appear in the drill-in panel.
+
+---
+
+## Tests
+
+```bash
+npm test           # run once
+npm run test:watch # watch mode
+```
+
+Tests cover: HTML stripping, synonym collapse (`pwd->password`), phrase detection, PMI math, and edge-to-incident lookup.
+
+---
+
+## Data privacy
+
+All CSV parsing, text processing, co-occurrence computation, and graph rendering run entirely in your browser.
+No data is transmitted to any server. The only persistence is `localStorage` for UI settings (stop words, synonyms).
